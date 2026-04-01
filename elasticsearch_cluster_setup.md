@@ -582,6 +582,117 @@ Aşağıdaki ekran görüntüleri, 3 node'lu cluster'ın başarıyla kurulduğun
 
 ---
 
+## 13. Kibana Kurulumu
+
+Kibana, Elasticsearch cluster'ını görsel arayüzle yönetmek ve sorgulamak için kullanılır. Sadece **testmaster03'e** kurulur — Kibana ES cluster'ına bağlanan bir arayüzdür, kendisi cluster oluşturmaz.
+
+> **Not:** Elasticsearch kurulumunda eklenen Elastic APT repo'su Kibana paketini de içerir, ekstra repo eklemeye gerek yoktur.
+
+### 13.1 Kibana Kurulumu
+
+**Sadece testmaster03'te çalıştır:**
+
+```bash
+apt-get install -y kibana
+```
+
+### 13.2 Kibana Enrollment Token Üret
+
+Kibana'nın Elasticsearch cluster'ına güvenli bağlanabilmesi için enrollment token gereklidir. Token içinde cluster'ın TLS sertifika bilgileri şifreli olarak gömülüdür — manuel config gerekmez.
+
+**Sadece testmaster03'te çalıştır:**
+
+```bash
+/usr/share/elasticsearch/bin/elasticsearch-create-enrollment-token -s kibana
+```
+
+Token **30 dakika** geçerlidir.
+
+### 13.3 Token'ı Kibana'ya Uygula
+
+```bash
+/usr/share/kibana/bin/kibana-setup --enrollment-token <TOKEN>
+```
+
+`Kibana configured successfully.` mesajı görünmelidir.
+
+### 13.4 Dışarıdan Erişim İçin server.host Ayarı
+
+Varsayılan olarak Kibana sadece `localhost`'u dinler, dışarıdan erişilemez. Bunu açmak için:
+
+```bash
+sed -i 's/#server.host: "localhost"/server.host: "0.0.0.0"/' /etc/kibana/kibana.yml
+```
+
+### 13.5 Kibana'yı Başlat
+
+```bash
+systemctl daemon-reload
+systemctl enable kibana
+systemctl start kibana
+```
+
+30-60 saniye bekle, erişilebilirliği doğrula:
+
+```bash
+curl -s http://192.168.14.12:5601/api/status | grep -o '"level":"[^"]*"'
+```
+
+`"level":"available"` dönmelidir.
+
+### 13.6 Kibana'ya Erişim
+
+Tarayıcıdan aç:
+
+```
+http://192.168.14.12:5601
+```
+
+- **Kullanıcı adı:** `elastic`
+- **Şifre:** testmaster03 kurulumunda oluşturulan şifre
+
+### 13.7 Dev Tools ile Cluster Sorguları
+
+Kibana arayüzünden sol menü → **Management → Dev Tools** yolunu izleyerek ya da direkt `http://192.168.14.12:5601/app/dev_tools` adresine giderek ES API sorgularını çalıştırabilirsiniz.
+
+### 13.8 Kibana Ekran Görüntüleri
+
+**Cluster Sağlık Durumu — Kibana Dev Tools:**
+
+<img src="images/f4.png" width="700">
+
+Kibana Dev Tools üzerinden `GET _cluster/health` sorgusu çalıştırıldı. `status: green`, `number_of_nodes: 3`, `active_shards_percent_as_number: 100` — cluster tam sağlıklı çalışıyor. `200 - OK` yanıtı API'nin başarıyla cevap verdiğini gösteriyor.
+
+**Node Listesi — Kibana Dev Tools:**
+
+<img src="images/f5.png" width="700">
+
+`GET _cat/nodes?v` sorgusu ile 3 node'un da fiziksel LAN IP'leriyle (`192.168.14.x`) cluster'a bağlı olduğu doğrulandı. `testworker02` aktif master (`*`), diğerleri master-eligible (`dm`) rolünde çalışıyor.
+
+## Kibana Dev Tools — Örnek Sorgular
+```console
+GET _cluster/health
+```
+
+Cluster'ın genel sağlık durumunu gösterir. `green/yellow/red`, kaç node var, kaç shard aktif, unassigned shard var mı.
+```console
+GET _cat/nodes?v
+```
+
+Cluster'daki tüm node'ları listeler. IP adresi, heap kullanımı, CPU, aktif master hangisi (`*`), node rolü.
+```console
+GET _cat/indices?v
+```
+
+Cluster'daki tüm index'leri listeler. Index adı, shard sayısı, replica sayısı, doküman sayısı, disk boyutu, durumu.
+```console
+GET _cat/shards?v
+```
+
+Her index'in shard'larının hangi node'da olduğunu gösterir. Primary mi replica mı (`p/r`), durumu (`STARTED/UNASSIGNED`), boyutu.
+
+---
+
 ## Önemli Notlar
 
 ### Kubernetes Ortamında IP Sorunu
